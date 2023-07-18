@@ -2,13 +2,20 @@ class ProjectsController < ApplicationController
   before_action :authenticate_user!
 
   def dashboard
-    @project_workspaces = ProjectWorkspace.order(created_at: :asc)
+    @project_workspaces = []
+    project_workspaces = ProjectWorkspace.order(created_at: :asc)
+    project_workspaces.all.each do |workspace|
+      if workspace.assigned.include? current_user.email
+        @project_workspaces.push(workspace)
+      end
+    end
+
     @users = User.all.pluck(:email)
   end
   
   def index
     @rocks = []
-    rocks = Rock.all.order(start: :asc)
+    rocks = ProjectWorkspace.find(params[:pw_id]).rocks.order(start: :asc)
     rocks.all.each do |rock|
       if rock.assigned.include? current_user.email
         @rocks.push(rock)
@@ -16,6 +23,7 @@ class ProjectsController < ApplicationController
     end
 
     @milestones = Milestone.all.order(start: :asc)
+    @submilestones = Submilestone.all.order(start: :asc)
     @users = User.all.pluck(:email)
     @all_users = User.all
 
@@ -23,9 +31,10 @@ class ProjectsController < ApplicationController
 
   def allprojects
     User.all.each do |user|
-      if user.admin == true || current_user.email == "jpbocatija@cem-inc.org.ph"
-        @rocks = Rock.all.order(start: :asc)
+      if user.admin == true || user.host == true || current_user.email == "jpbocatija@cem-inc.org.ph"
+        @rocks = ProjectWorkspace.find(params[:pw_id]).rocks.order(start: :asc)
         @milestones = Milestone.all.order(start: :asc)
+        @submilestones = Submilestone.all.order(start: :asc)
         @users = User.all.pluck(:email)
         @all_users = User.all
       end
@@ -39,9 +48,9 @@ class ProjectsController < ApplicationController
     @assigned_array.insert(0, current_user.email)
 
     respond_to do |format|
-      if current_user.rocks.create(rock_params)
-        current_user.rocks.last.update(assigned:@assigned_array)
-        format.html { redirect_to view_projects_path(), notice: "You have successfully create a new project" }
+      if ProjectWorkspace.find(params[:pw_id]).rocks.create(rock_params)
+        ProjectWorkspace.find(params[:pw_id]).rocks.last.update(assigned:@assigned_array)
+        format.html { redirect_to view_projects_path, notice: "You have successfully create a new project" }
       else
         redirect_to view_projects_path
       end
@@ -50,8 +59,8 @@ class ProjectsController < ApplicationController
 
   def update_rocks  
     @assigned_array = params[:assigned].reject(&:empty?)
-    @assigned_array.delete(Rock.find(params[:id]).user.email)
-    @assigned_array.insert(0, Rock.find(params[:id]).user.email)
+    @assigned_array.delete(User.find(params[:user_id]).email)
+    @assigned_array.insert(0, User.find(params[:user_id]).email)
     respond_to do |format|
       if Rock.find(params[:id]).update(rock_params)
         Rock.find(params[:id]).update(assigned:@assigned_array)
@@ -65,16 +74,20 @@ class ProjectsController < ApplicationController
 
   def delete_rocks
     # delete rock messages
-    current_user.rocks.find(params[:id]).rockmessages.destroy_all
-    # delete milestone messages
-    allmilestone = current_user.rocks.find(params[:id]).milestones
+    Rock.find(params[:id]).rockmessages.destroy_all
+    # delete milestone messages,submilestones messages and submilestones
+    allmilestone = Rock.find(params[:id]).milestones
     allmilestone.each do |milestone|
+      milestone.submilestones.each do |submilestone|
+        submilestone.submessages.destroy_all
+      end
       milestone.messages.destroy_all
+      milestone.submilestones.destroy_all
     end
     # delete milestones
-    current_user.rocks.find(params[:id]).milestones.destroy_all
+    Rock.find(params[:id]).milestones.destroy_all
     respond_to do |format|
-      if current_user.rocks.find(params[:id]).destroy
+      if Rock.find(params[:id]).destroy
         format.html { redirect_to view_projects_path, notice: "You have successfully deleted you rock" }
       else
         redirect_to view_projects_path
@@ -135,6 +148,12 @@ class ProjectsController < ApplicationController
 
   def delete_milestones
     @milestone = current_user.milestones.find(params[:id])
+    # delete submilestone messages
+    @milestone.submilestones.each do |submilestone|
+      submilestone.submessages.destroy_all
+    end
+    # delete submilestones
+    @milestone.submilestones.destroy_all
     # delete milestone messages
     @milestone.messages.destroy_all
     respond_to do |format|
@@ -153,9 +172,9 @@ class ProjectsController < ApplicationController
   def create_message
     respond_to do |format|
       if Milestone.find(params[:milestone_id]).messages.create(message_params)
-        format.html { redirect_to view_projects_path({rock_id: params[:rock_id],milestone_id: params[:milestone_id]}), notice: "You have successfully create a new message" }
+        format.html { redirect_to view_projects_path({rock_id: params[:rock_id],mm_id: params[:milestone_id]}), notice: "You have successfully create a new message" }
       else
-        redirect_to view_projects_path({rock_id: params[:rock_id],milestone_id: params[:milestone_id] })
+        redirect_to view_projects_path({rock_id: params[:rock_id],mm_id: params[:milestone_id] })
       end
     end
   end
@@ -163,9 +182,9 @@ class ProjectsController < ApplicationController
   def update_message
     respond_to do |format|
       if Milestone.find(params[:milestone_id]).messages.find(params[:id]).update(message_params)
-        format.html { redirect_to view_projects_path({rock_id: params[:rock_id],milestone_id: params[:milestone_id]}), notice: "You have successfully updated a new message" }
+        format.html { redirect_to view_projects_path({rock_id: params[:rock_id],mm_id: params[:milestone_id]}), notice: "You have successfully updated a new message" }
       else
-        redirect_to view_projects_path({rock_id: params[:rock_id],milestone_id: params[:milestone_id]})
+        redirect_to view_projects_path({rock_id: params[:rock_id],mm_id: params[:milestone_id]})
       end
     end
   end
@@ -174,9 +193,9 @@ class ProjectsController < ApplicationController
     @message = Milestone.find(params[:milestone_id]).messages.find(params[:id])
     respond_to do |format|
       if @message.destroy
-        format.html { redirect_to view_projects_path({rock_id: params[:rock_id],milestone_id: params[:milestone_id]}), notice: "You have successfully deleted your message" }
+        format.html { redirect_to view_projects_path({rock_id: params[:rock_id],mm_id: params[:milestone_id]}), notice: "You have successfully deleted your message" }
       else
-        redirect_to view_projects_path({rock_id: params[:rock_id],milestone_id: params[:milestone_id]})
+        redirect_to view_projects_path({rock_id: params[:rock_id],mm_id: params[:milestone_id]})
       end
     end
   end
@@ -215,7 +234,7 @@ class ProjectsController < ApplicationController
   private
 
   def rock_params
-    params.permit(:task_name, :start, :finish, :assigned, :remarks, :output, :date_completed)
+    params.permit(:user_id, :task_name, :start, :finish, :assigned, :remarks, :output, :date_completed)
   end
 
   def milestone_params
