@@ -97,9 +97,11 @@ ActiveRecord::Schema[7.0].define(version: 2023_07_07_005142) do
     t.date "start"
     t.date "finish"
     t.text "assigned"
+    t.integer "complete"
     t.date "date_completed"
     t.text "output"
     t.text "remarks"
+    t.string "reviewed_by", default: ""
     t.integer "user_id"
     t.integer "project_workspace_id"
     t.datetime "created_at", null: false
